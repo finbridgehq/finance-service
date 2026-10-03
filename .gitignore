@@ -1,0 +1,45 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Configuración local con secretos ###
+# config/application-local.yaml lleva credenciales reales (STRIPE_SECRET_KEY, la
+# contraseña de la BD). Se activa con SPRING_PROFILES_ACTIVE=dev,local.
+# Va en config/ de la raíz, NO en src/main/resources: ese directorio se copia a
+# target/classes y el secreto acabaría dentro del jar.
+# Ver docs/guides/stripe-configuration.md.
+application-local.yaml
+application-local.yml
+# Spring Boot no lee .env, pero lo ignoramos por si alguien lo crea por costumbre.
+.env
+.env.local
