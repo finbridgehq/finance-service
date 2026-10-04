@@ -1,0 +1,82 @@
+server:
+  port: 8083
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${FINANCE_DB_HOST:localhost}:${FINANCE_DB_PORT:5434}/${FINANCE_DB_NAME:vankoo_finance_db_dev}
+    username: ${FINANCE_DB_USERNAME:admin}
+    password: ${FINANCE_DB_PASSWORD:password}
+
+  cloud:
+    stream:
+      kafka:
+        binder:
+          brokers: ${KAFKA_HOST:localhost}:${KAFKA_EXTERNAL_PORT:9092}
+          auto-create-topics: true
+          producer-properties:
+            acks: all # El mensaje se replica en todos los brokers antes de darlo por enviado
+            retries: 3
+            # Evita duplicados si un reintento del productor llega dos veces. Es una
+            # barrera distinta del event-id: esa la usa el consumidor, esta el broker.
+            enable.idempotence: true
+            # El productor tiene que rendirse ANTES que el timeout de handler de Axon
+            # (axon.timeout.handler.events.timeout-ms, 30s por defecto), o el janitor
+            # interrumpe el hilo y el fallo llega como AxonTimeoutException en vez de
+            # como el nuestro. Son dos esperas que se suman, y las dos vienen de
+            # fabrica por encima de los 30s:
+            #   max.block.ms       espera de metadata DENTRO de send()   (120s -> 5s)
+            #   delivery.timeout.ms  de ahi sale el sendTimeout del envio sincrono
+            # Peor caso ahora ~20.5s, con margen bajo los 30s. Verificado parando el
+            # broker en caliente: con los valores de fabrica el janitor interrumpia.
+            # Regla de Kafka: delivery.timeout.ms >= request.timeout.ms + linger.ms.
+            max.block.ms: 5000
+            request.timeout.ms: 7000
+            delivery.timeout.ms: 15000
+        # Propiedades extendidas del binder de Kafka. Van bajo spring.cloud.stream.kafka
+        # y no bajo spring.cloud.stream: el ProducerProperties del nucleo no tiene ni
+        # 'sync' ni 'configuration', asi que ahi abajo se ignoran en silencio.
+        bindings:
+          finance-out-0:
+            producer:
+              # Bloquea hasta que el broker confirma, o lanza. Sin esto el binder
+              # publica asincrono: send() vuelve al entregar el registro al productor
+              # y el fallo posterior muere en un callback que nadie lee.
+              sync: true
+              configuration:
+                # La key del registro es el depositId, un String. Sin esto el binder
+                # serializa keys como byte[] y la clave de particion sale mal.
+                key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      bindings:
+        # El nombre debe coincidir con EventServiceImpl.BINDING: no hay enlace de compilacion.
+        finance-out-0:
+          destination: vankoo.finance.events.v1 # Un solo topic; se discrimina por el header event-type
+          content-type: application/json
+
+axon:
+  axonserver:
+    servers: ${AXON_SERVER_HOST:localhost}:${AXON_SERVER_PORT:8124} # En desarrollo, Axon Server corre suelto en localhost
+
+# Usamos logs de Hibernate para mostrar las consultas SQL, ya que nos da más control sobre el formato y la información
+logging:
+  level:
+    org.hibernate.SQL: debug
+
+eureka:
+  instance:
+    prefer-ip-address: false # En desarrollo, no es necesario usar IP, el hostname funciona bien
+  client:
+    register-with-eureka: true # Buscamos registrarnos en Eureka
+    fetch-registry: true # Queremos obtener la lista de servicios registrados para poder comunicarnos con ellos
+    service-url:
+      defaultZone: ${DISCOVERY_SERVER_URL:http://localhost:8761/eureka/} # En desarrollo, apuntamos a localhost para Eureka
+
+documentation:
+  local-url: http://localhost:${FINANCE_SERVICE_PORT:8083} # En desarrollo, el servicio se verá a través de localhost
+  gateway-url: http://localhost:${API_GATEWAY_PORT:8080}/finance # En desarrollo, el API Gateway se verá a través de localhost
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # En desarrollo, exponemos solo los endpoints de salud e info por temas de seguridad, pero también para no saturar el log
+        include: "health,info" # Importante para que Eureka vea el estado de Finance
